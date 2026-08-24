@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scary Web Game - Escape</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #ff0000;
+            font-size: 20px;
+            font-weight: bold;
+            text-shadow: 2px 2px #000;
+            pointer-events: none;
+        }
+        #instructions {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border: 2px solid #ff0000;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">Find the Key & Escape!</div>
+    <div id="instructions">
+        <h1>SCARY ESCAPE</h1>
+        <p>Click to Play</p>
+        <p><b>WASD</b> to Move | <b>Mouse</b> to Look</p>
+    </div>
+
+    <!-- Include Three.js for 3D graphics -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, monster, key, door;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let prevMouseX = 0, prevMouseY = 0;
+        let yaw = 0, pitch = 0;
+        let gameActive = false;
+        let hasKey = false;
+
+        const keys = { w: false, a: false, s: false, d: false };
+
+        function init() {
+            // Scene Setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x050505);
+            scene.fog = new THREE.FogExp2(0x050505, 0.08);
+
+            // Camera Setup
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 1.6, 5);
+
+            // Renderer Setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting (Dim & Spooky)
+            const ambientLight = new THREE.AmbientLight(0x222222);
+            scene.add(ambientLight);
+
+            const pointLight = new THREE.PointLight(0xff5555, 1, 10);
+            pointLight.position.set(0, 3, 0);
+            scene.add(pointLight);
+
+            // Environment (Maze/Room)
+            createEnvironment();
+
+            // Monster (Granny substitute)
+            const monsterGeo = new THREE.BoxGeometry(1, 2, 1);
+            const monsterMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            monster = new THREE.Mesh(monsterGeo, monsterMat);
+            monster.position.set(10, 1, -10);
+            scene.add(monster);
+
+            // Key to Collect
+            const keyGeo = new THREE.ConeGeometry(0.2, 0.5, 4);
+            const keyMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+            key = new THREE.Mesh(keyGeo, keyMat);
+            key.position.set(-8, 0.5, -8);
+            scene.add(key);
+
+            // Event Listeners
+            document.getElementById('instructions').addEventListener('click', () => {
+                document.body.requestPointerLock();
+            });
+
+            document.addEventListener('pointerlockchange', () => {
+                gameActive = document.pointerLockElement === document.body;
+                document.getElementById('instructions').style.display = gameActive ? 'none' : 'block';
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!gameActive) return;
+                yaw -= e.movementX * 0.002;
+                pitch -= e.movementY * 0.002;
+                pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+                
+                camera.rotation.set(0, 0, 0);
+                camera.rotateY(yaw);
+                camera.rotateX(pitch);
+            });
+
+            window.addEventListener('keydown', (e) => handleKey(e, true));
+            window.addEventListener('keyup', (e) => handleKey(e, false));
+            window.addEventListener('resize', onWindowResize);
+
+            animate();
+        }
+
+        function createEnvironment() {
+            // Floor
+            const floorGeo = new THREE.PlaneGeometry(50, 50);
+            const floorMat = new THREE.MeshBasicMaterial({ color: 0x111111, side: THREE.DoubleSide });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = Math.PI / 2;
+            scene.add(floor);
+
+            // Simple Walls
+            const wallMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
+            const wallGeo = new THREE.BoxGeometry(50, 5, 1);
+            
+            const wall1 = new THREE.Mesh(wallGeo, wallMat);
+            wall1.position.set(0, 2.5, -25);
+            scene.add(wall1);
+
+            const wall2 = wall1.clone();
+            wall2.position.set(0, 2.5, 25);
+            scene.add(wall2);
+        }
+
+        function handleKey(e, isDown) {
+            switch(e.key.toLowerCase()) {
+                case 'w': keys.w = isDown; break;
+                case 'a': keys.a = isDown; break;
+                case 's': keys.s = isDown; break;
+                case 'd': keys.d = isDown; break;
+            }
+        }
+
+        function update() {
+            if (!gameActive) return;
+
+            // Movement Logic
+            const speed = 0.08;
+            const direction = new THREE.Vector3();
+            if (keys.w) direction.z -= 1;
+            if (keys.s) direction.z += 1;
+            if (keys.a) direction.x -= 1;
+            if (keys.d) direction.x += 1;
+            direction.normalize();
+            direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+            camera.position.addScaledVector(direction, speed);
+
+            // Monster AI (Follows Player)
+            const monsterSpeed = 0.035;
+            monster.lookAt(camera.position);
+            monster.position.lerp(camera.position, monsterSpeed);
+            monster.position.y = 1; // Keep grounded
+
+            // Check Key Collection
+            if (!hasKey && camera.position.distanceTo(key.position) < 1.5) {
+                hasKey = true;
+                scene.remove(key);
+                document.getElementById('ui').innerText = "You found the key! Escape to the start!";
+            }
+
+            // Check Win Condition (Return to start with key)
+            if (hasKey && camera.position.distanceTo(new THREE.Vector3(0, 1.6, 5)) < 1.5) {
+                alert("YOU ESCAPED!");
+                location.reload();
+            }
+
+            // Check Lose Condition (Monster catches player)
+            if (camera.position.distanceTo(monster.position) < 1.2) {
+                alert("CAUGHT! GAME OVER");
+                location.reload();
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            update();
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html>
